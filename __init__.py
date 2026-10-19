@@ -57,6 +57,11 @@ from .stubelius_color_lock import (
     NODE_CLASS_MAPPINGS as _LOCK_NODES,
     NODE_DISPLAY_NAME_MAPPINGS as _LOCK_NAMES,
 )
-for _nodes, _names in ((_PIPE_NODES, _PIPE_NAMES), (_RIFE_NODES, _RIFE_NAMES), (_LOCK_NODES, _LOCK_NAMES)):
+from .stubelius_ltx_windows import (
+    NODE_CLASS_MAPPINGS as _WIN_NODES,
+    NODE_DISPLAY_NAME_MAPPINGS as _WIN_NAMES,
+)
+for _nodes, _names in ((_PIPE_NODES, _PIPE_NAMES), (_RIFE_NODES, _RIFE_NAMES), (_LOCK_NODES, _LOCK_NAMES),
+                       (_WIN_NODES, _WIN_NAMES)):
     NODE_CLASS_MAPPINGS.update(_nodes)
     NODE_DISPLAY_NAME_MAPPINGS.update(_names)
