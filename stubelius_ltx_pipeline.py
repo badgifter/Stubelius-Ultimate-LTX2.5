@@ -26,6 +26,7 @@ import logging
 import os
 import types
 
+import comfy.model_management
 import comfy.samplers
 import comfy.sd
 import comfy.utils
@@ -202,6 +203,20 @@ def _model_key(cfg):
     return tuple((k, cfg[k]) for k in MODEL_KEYS)
 
 
+_PREVIEW_ERRORS = set()     # a failed live preview is logged once per error, not on every run
+
+
+class _Hidden(types.SimpleNamespace):
+    """The hidden inputs ComfyUI's executor gives a node it runs (unique_id, dynprompt, prompt ...). For a node we
+    call ourselves, the ones not set here read as None, as when the executor has none to give: KJNodes' preview
+    reads dynprompt since 2026-10-14 and falls back to unique_id when it is None."""
+
+    def __getattr__(self, name):
+        if name.startswith("__"):
+            raise AttributeError(name)
+        return None
+
+
 class LTXModels:
     """Model bundle for Seeds and Finish. Everything loads once per file name and is cached."""
 
@@ -303,17 +318,28 @@ class LTXModels:
 
     def preview(self, model, node_id, fps):
         """Attach the live sampling preview (KJ Model Preview Override with the tiny LTX VAE) for the
-        node that samples. Cheap (clone + wrapper), so it's applied per run instead of being cached."""
+        node that samples. Cheap (clone + wrapper), so it's applied per run instead of being cached.
+        The preview only shows the sampling: when KJNodes' node fails (a version this call doesn't
+        fit), the render goes on without it."""
         cls = _cls("ModelPreviewOverrideKJ")
         tiny = self.tiny_vae() if cls is not None else None
         if model is None or tiny is None:
             return model
         saved = getattr(cls, "hidden", None)
-        cls.hidden = types.SimpleNamespace(unique_id=node_id)   # normally set by ComfyUI's executor
+        cls.hidden = _Hidden(unique_id=node_id)   # normally set by ComfyUI's executor
         try:
             return _unwrap(cls.execute(model=model, max_resolution=PREVIEW_MAX_RES, jpeg_quality=80,
                                        suppress_default_preview=True, preview_frames=257,
                                        preview_fps=max(1, round(fps)), vae=tiny, tiny_vae="none"))[0]
+        except comfy.model_management.InterruptProcessingException:
+            raise
+        except Exception as e:
+            error = f"{type(e).__name__}: {e}"
+            if error not in _PREVIEW_ERRORS:
+                _PREVIEW_ERRORS.add(error)
+                log.warning("[StubeliusLTXModels] live preview skipped, the render goes on without it: "
+                            "KJNodes' Model Preview Override failed (%s)", error)
+            return model
         finally:
             cls.hidden = saved
 
