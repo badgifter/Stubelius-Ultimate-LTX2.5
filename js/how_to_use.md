@@ -2,7 +2,7 @@
 
 Four windows, left to right: **1 Setup → 2 Director → 3 Seeds → 4 Output**. The step bar at the top of every window jumps to the others. The small nodes the windows edit sit behind them: move a window to reach one. A workflow laid out before is tidied once when it opens (**Tidy the canvas** under Look in Setup does it again). A Director from an older workflow opens in its classic editor: **Show as window** under it brings the window.
 
-**Updates:** [github.com/stuubszzz/Stubelius-Ultimate-LTX2.5](https://github.com/stuubszzz/Stubelius-Ultimate-LTX2.5) · ComfyUI Manager → Update All, or `git pull` in custom_nodes/Stubelius-Ultimate-LTX2.5. **Live preview:** put the tiny LTX VAE (`taeltx2_5`) in models/vae_approx or models/vae and pick it under Models in Setup.
+**Updates:** [github.com/stuubszzz/Stubelius-Ultimate-LTX2.5](https://github.com/stuubszzz/Stubelius-Ultimate-LTX2.5) · ComfyUI Manager → Update All, or `git pull` in custom_nodes/Stubelius-Ultimate-LTX2.5. **Live preview:** put the tiny LTX VAE (`taeltx2_5`) in models/vae and pick it under Models in Setup.
 
 ## 1 · SETUP — how the seeds are rendered
 - **Mode** — **Full size**: the seeds render at the Director's size and the winner is finished as rendered, with real HD detail. **Draft**: half-size seeds for quick looks; the winner is upscaled ×2 in latent space and refined, which can't add the detail a half-size render never had. **Low VRAM**: Draft with the memory savers on, for smaller cards. Steps, first pass and cfg are under the cards: 8 steps at cfg 1 is the official distilled first pass.
