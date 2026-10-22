@@ -918,7 +918,7 @@ export class DirectorWindow {
     const all = !parts;
     const has = (p) => all || parts.includes(p);
     if (has("head")) this.renderHead();
-    if (has("cmd")) this.renderCmd();
+    if (has("cmd") || this.sizeLabel() !== this._sizeShown) this.renderCmd();   // a first picture can change the size
     if (has("preview")) this.preview.render();
     if (has("insp")) buildInspector(this);
     if (has("tl")) buildTimeline(this);
@@ -941,10 +941,53 @@ export class DirectorWindow {
 
   sizeLabel() {
     const w = Number(this.val("custom_width", 0)), hgt = Number(this.val("custom_height", 0));
+    const fit = this.fittedSize();
+    if (fit) return `${fit[0]}×${fit[1]}`;
     if (w > 0 && hgt > 0) return `${w}×${hgt}`;
     if (w > 0) return `${w} wide`;
     if (hgt > 0) return `${hgt} high`;
     return "Picture";
+  }
+
+  // The size the render really gets. With "maintain aspect ratio" the Director node fits its size source inside the set
+  // size and the video takes that shape (ltx_director.py, _resize_image). The source is the first picture or clip in the
+  // render window, else the retake's video, else the first motion clip: 1920x1088 pictures make 1280x704 into 1216x704.
+  // Null when it is the set size, or while the source's size isn't known yet.
+  fittedSize() {
+    const w = Number(this.val("custom_width", 0)), hgt = Number(this.val("custom_height", 0));
+    if (!(w > 0 && hgt > 0) || this.val("resize_method", "maintain aspect ratio") !== "maintain aspect ratio") return null;
+    const t = this.t;
+    const first = [...t.segments].sort((a, b) => a.start - b.start).find((s) => (s.imageFile || s.imageB64)
+      && s.start < this.startF + this.durF && s.start + s.length > this.startF);
+    const motion = (t.motionSegments || []).find((s) => s.videoFile);
+    const dims = first ? (M.isClip(first) ? first.imageFile && this.mediaSize(inputUrl(first.imageFile), true)
+        : this.mediaSize(first.imageFile ? inputUrl(first.imageFile) : first.imageB64))
+      : t.retakeMode && t.retakeVideo?.imageFile ? this.mediaSize(inputUrl(t.retakeVideo.imageFile), true)
+      : motion ? this.mediaSize(inputUrl(motion.videoFile), true) : null;
+    if (!dims) return null;
+    const div = Number(this.val("divisible_by", 32)) || 32;
+    const snap = (v) => Math.max(div, Math.floor(v / div) * div);
+    const tw = snap(w), th = snap(hgt), r = Math.min(tw / dims[0], th / dims[1]);
+    const fw = snap(Math.trunc(dims[0] * r)), fh = snap(Math.trunc(dims[1] * r));
+    return fw === tw && fh === th ? null : [fw, fh];
+  }
+
+  // A picture's or video's own size, read once per file; the size field is drawn again when it arrives
+  mediaSize(url, video = false) {
+    const known = (this._mediaSizes ||= new Map());
+    if (!url) return null;
+    if (!known.has(url)) {
+      known.set(url, null);
+      const el = video ? document.createElement("video") : new Image();
+      const done = () => {
+        const size = video ? [el.videoWidth, el.videoHeight] : [el.naturalWidth, el.naturalHeight];
+        if (size[0] > 0 && size[1] > 0) { known.set(url, size); this.renderCmd(); }
+      };
+      if (video) { el.preload = "metadata"; el.muted = true; el.addEventListener("loadedmetadata", done, { once: true }); }
+      else el.addEventListener("load", done, { once: true });
+      el.src = url;
+    }
+    return known.get(url);
   }
 
   renderCmd() {
@@ -961,8 +1004,12 @@ export class DirectorWindow {
     };
     const field = (name, el) => h("div.d-field", label(name), el);
     const vsep = () => h("div.d-vsep");
-    const sizeBtn = h("button.d-val.d-valbtn", { type: "button", title: "The video's size: click for the sizes",
-      onclick: (e) => this.sizeMenu(e.currentTarget) }, this.sizeLabel());
+    const fit = this.fittedSize();
+    this._sizeShown = this.sizeLabel();
+    const sizeBtn = h("button.d-val.d-valbtn", { type: "button", onclick: (e) => this.sizeMenu(e.currentTarget),
+      title: fit ? `${this.val("custom_width", 0)}×${this.val("custom_height", 0)} is set; the video takes the first picture's `
+        + `shape inside it ("maintain aspect ratio" in Settings, "crop" keeps the set size). Click for the sizes`
+        : "The video's size: click for the sizes" }, this._sizeShown);
     const fpsBtn = h("button.d-val.d-valbtn.d-fps", { type: "button", title: "Frames per second: click for the rates",
       onclick: (e) => this.fpsMenu(e.currentTarget) }, String(this.fps));
     const fpsRow = h("div.d-valrow", fpsBtn, h("span.d-unit", "fps"));
@@ -1077,7 +1124,9 @@ export class DirectorWindow {
     const use = button("Use", null, "small", () => { closeMenus(); this.setSize(snap(wIn.value), snap(hIn.value)); });
     popover(anchor, h("div.d-sizepop", h("div.slx-lbl", "Video size"), list,
       h("div.d-size-row", wIn, h("span.slx-muted", "×"), hIn, use),
-      h("div.slx-muted.d-size-note", `Pictures are fitted to it by "${this.val("resize_method", "maintain aspect ratio")}" (Settings). `
+      h("div.slx-muted.d-size-note", (this.val("resize_method", "maintain aspect ratio") === "maintain aspect ratio"
+        ? `With "maintain aspect ratio" (Settings) the video takes the first picture's shape inside this size; "crop" keeps it exact. `
+        : `Pictures are fitted to it by "${this.val("resize_method")}" (Settings). `)
         + "Sizes snap to LTX's 32-pixel grid.")), 360);
   }
 
