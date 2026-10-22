@@ -1,17 +1,43 @@
 
 # Stubelius Ultimate LTX 2.5
 
-The LTX 2.5 Director timeline node plus **Stubelius Ultimate LTX**: one clean LTX 2.5 workflow.
-Render 1–4 full seeds with sound, pick the winner, and only the winner gets refined at full size,
-frame-interpolated and upscaled.
+[![Watch the Ultimate LTX 2.5 video (version 2.1) on YouTube](docs/video-2.1.jpg)](https://youtu.be/0aRAocXqhBE)
+
+**▶ [Watch the 2.1 video on YouTube](https://youtu.be/0aRAocXqhBE)** (28 min). It goes through all four windows, from
+the first setting to the finished video, with first, middle and last frames in one shot, seeds side by side, a 2K
+finish and a retake of one moment.
+
+The LTX 2.5 Director timeline node plus **Stubelius Ultimate LTX**: one LTX 2.5 workflow for ComfyUI, in four
+windows. **Setup** decides **how** the seeds are rendered (Full size, Draft or Low VRAM, the models, the speed-ups).
+The **Director** holds **what the video is**: frames, prompts, motion, sound and characters on one timeline.
+**Seeds** plays 1–4 full seeds with sound side by side, you pick the winner, and only the winner gets finished in
+**Output** (resolution up to 4K, frame rate, upscaler).
 
 Install steps, settings and RTX 5090 render times: [the Stubelius Ultimate LTX 2.5 guide](https://stuubzzz.studio/blog/ltx-2-5-director-comfyui-multishot-timeline/).
 
 <div align="center">
-<a href="docs/ultimate_ltx_workflow.webp?raw=true"><img src="docs/ultimate_ltx_workflow.webp" alt="The Stubelius Ultimate LTX workflow in ComfyUI: setup, models and output on the left, the Director timeline in the middle, the seed previews and the final video on the right" /></a>
+<a href="docs/ultimate_ltx_workflow.webp?raw=true"><img src="docs/ultimate_ltx_workflow.webp" alt="Stubelius Ultimate LTX in ComfyUI: the How to use window, then Setup, Director, Seeds and Output, left to right" /></a>
 <br>
-<em>The workflow as it opens. Click the image to see it full size.</em>
+<em>The workflow after a render of the glassblower: three seeds, seed 3 picked and finished at 2K. Click the image to
+see it full size.</em>
 </div>
+
+## What's new in 2.1
+
+- **Four windows**: Setup, Director, Seeds and Output, six looks, a step bar on top of every window and a **How to
+  use** window next to them.
+- **The Director as a window**: keyframes (the last frame lands on the video's real last frame), prompts cut into
+  segments, motion, audio and the Cast for Licon MSR characters, all on one timeline.
+- **Seeds**: every seed side by side and in sync, solo, A/B split and full size. Pick the winner, or hunt new seeds.
+- **Output**: the finish settings (up to 4K, up to 120 fps with RIFE, DLSS5 + Color Lock or RTX VSR) next to a
+  split view with a loupe, the export and the last frame.
+- **Finish the winner** is one button in Seeds: only the finish runs. If the settings changed since the seeds, it
+  asks before it renders them again.
+- **Fixes**: a retake covers exactly the frames you set (it could start early), and the Director's Size field
+  shows the size the video will really have.
+
+To get the windows, open the example workflow again (below). A workflow from before opens the Director in its
+classic editor, with **Show as window** under it.
 
 ## Stubelius Ultimate LTX
 
