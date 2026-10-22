@@ -415,7 +415,7 @@ export class DirectorWindow {
       if (s.isEndFrame === undefined) s.isEndFrame = false;
       this.touch();
     } catch (err) {
-      console.error("[Stubelius LTX Director] picture upload failed", err);
+      console.error("[Stubelius LTX] Director: picture upload failed", err);
       toast(this.root, "Upload failed: see the console", "bad");
       this.refresh(["tl", "insp", "status"]);
     }
@@ -458,7 +458,7 @@ export class DirectorWindow {
         toast(this.root, `${file.name} has no sound: LTX makes the sound there`);
       }
     } catch (err) {
-      console.error("[Stubelius LTX Director] clip upload failed", err);
+      console.error("[Stubelius LTX] Director: clip upload failed", err);
       toast(this.root, "Upload failed: see the console", "bad");
       t.audioSegments = t.audioSegments.filter((x) => x !== sound);
       this.dropMedia(s);
@@ -618,7 +618,7 @@ export class DirectorWindow {
       const up = await uploadMedia(file);
       s.videoFile = up.file;
     } catch (err) {
-      console.error("[Stubelius LTX Director] motion clip upload failed", err);
+      console.error("[Stubelius LTX] Director: motion clip upload failed", err);
       toast(this.root, "Upload failed: see the console", "bad");
       t.motionSegments = t.motionSegments.filter((x) => x !== s);
     }
@@ -651,7 +651,7 @@ export class DirectorWindow {
       s.audioFile = up.file;
       if (wasOff) toast(this.root, "Your audio is on: LTX keeps your sounds and fills the rest");
     } catch (err) {
-      console.error("[Stubelius LTX Director] sound upload failed", err);
+      console.error("[Stubelius LTX] Director: sound upload failed", err);
       toast(this.root, "Upload failed: see the console", "bad");
       t.audioSegments = t.audioSegments.filter((x) => x !== s);
     }
@@ -753,7 +753,7 @@ export class DirectorWindow {
       const up = await uploadMedia(file);
       if (t.retakeVideo) t.retakeVideo.imageFile = up.file;
     } catch (err) {
-      console.error("[Stubelius LTX Director] retake video upload failed", err);
+      console.error("[Stubelius LTX] Director: retake video upload failed", err);
       toast(this.root, "Upload failed: see the console", "bad");
     }
     if (t.retakeVideo) delete t.retakeVideo._uploading;

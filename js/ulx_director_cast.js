@@ -42,7 +42,7 @@ async function storeRef(file) {
       const up = await uploadFile(new File([blob], `ltxref_${base}_${Date.now()}.jpg`, { type: "image/jpeg" }));
       return { name: up.file };
     } catch (err) {
-      console.error("[Stubelius LTX Director] reference upload failed, keeping the picture in the timeline", err);
+      console.error("[Stubelius LTX] Director: reference upload failed, keeping the picture in the timeline", err);
       return { b64: c.toDataURL("image/jpeg", 0.95), name: file.name };
     }
   } finally {
