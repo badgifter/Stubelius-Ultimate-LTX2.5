@@ -13936,51 +13936,63 @@ app.registerExtension({
           ["custom_width", "custom_height", "frame_rate", "resize_method", "reference_strength"].forEach(n => { hideWidget(getW(n)); });
           ensureTimingHidden();
         };
-        const settingsContainer = document.createElement("div");
-        settingsContainer.style.boxSizing = "border-box";
-        _ltxForwardWheelToGraph(settingsContainer);
-        _ltxBuildSettingsPanel(this, settingsContainer);
-        const settingsWidget = this.addDOMWidget("ltx_settings_ui", "ltx_settings_ui", settingsContainer, {
-          getValue: () => "",
-          setValue: () => { },
-        });
-        settingsWidget.computeSize = function () { return [0, 184]; };
-        const _ltxOrigOnConfigure = this.onConfigure;
-        this.onConfigure = function () {
-          if (_ltxOrigOnConfigure) _ltxOrigOnConfigure.apply(this, arguments);
-          if (this._ltxSettingsRefresh) { try { this._ltxSettingsRefresh(); } catch (e) {} }
+        // The settings panel and the timeline editor. With the Director window loaded (js/ulx_director.js) it
+        // decides, once the workflow's own properties are in, between itself and this classic editor, and calls
+        // this for the classic one; without it the classic editor is built straight away, as before.
+        const buildClassic = () => {
+          if (self._ltxClassicBuilt) return;
+          self._ltxClassicBuilt = true;
+          const settingsContainer = document.createElement("div");
+          settingsContainer.style.boxSizing = "border-box";
+          _ltxForwardWheelToGraph(settingsContainer);
+          _ltxBuildSettingsPanel(self, settingsContainer);
+          const settingsWidget = self.addDOMWidget("ltx_settings_ui", "ltx_settings_ui", settingsContainer, {
+            getValue: () => "",
+            setValue: () => { },
+          });
+          settingsWidget.computeSize = function () { return [0, 184]; };
+          const _ltxOrigOnConfigure = self.onConfigure;
+          self.onConfigure = function () {
+            if (_ltxOrigOnConfigure) _ltxOrigOnConfigure.apply(this, arguments);
+            if (this._ltxSettingsRefresh) { try { this._ltxSettingsRefresh(); } catch (e) {} }
+          };
+
+          const container = document.createElement("div");
+
+          container.style.boxSizing = "border-box";
+          _ltxForwardWheelToGraph(container);
+          const widget = self.addDOMWidget("timeline_ui", "timeline_ui", container, {
+            getValue: () => "",
+            setValue: () => { },
+          });
+
+          widget.computeSize = function (width) {
+            const canvasH = self._timelineEditor ? self._timelineEditor.canvasHeight : CANVAS_HEIGHT;
+            const propH = self._timelineEditor ? (self._timelineEditor.propHeight || 90) : 90;
+            const globalPropH = self._timelineEditor ? (self._timelineEditor.globalPropHeight || 60) : 60;
+            // Reserve room for the @char reference panel at the bottom so the node doesn't
+            // collapse and crop it whenever ComfyUI recomputes the node height. When the
+            // reference features are hidden the panel is never built, so reserve nothing -
+            // the `|| 150` default would otherwise leave an empty strip below the prompt.
+            const charPanelH = !REFERENCE_FEATURES ? 0
+              : (self._timelineEditor ? (self._timelineEditor.charPanelHeight || 150) : 150);
+            const nodeWidth = self.size?.[0] || width || 1375;
+            return [Math.max(10, nodeWidth - 30), canvasH + propH + globalPropH + charPanelH + 160];
+          };
+
+          setTimeout(() => {
+            try {
+              self._timelineEditor = new TimelineEditor(self, container, widget);
+            } catch (err) {
+              console.error("[PromptRelay] timeline editor init failed:", err);
+            }
+          }, 0);
         };
-
-        const container = document.createElement("div");
-
-        container.style.boxSizing = "border-box";
-        _ltxForwardWheelToGraph(container);
-        const widget = this.addDOMWidget("timeline_ui", "timeline_ui", container, {
-          getValue: () => "",
-          setValue: () => { },
-        });
-
-        widget.computeSize = function (width) {
-          const canvasH = self._timelineEditor ? self._timelineEditor.canvasHeight : CANVAS_HEIGHT;
-          const propH = self._timelineEditor ? (self._timelineEditor.propHeight || 90) : 90;
-          const globalPropH = self._timelineEditor ? (self._timelineEditor.globalPropHeight || 60) : 60;
-          // Reserve room for the @char reference panel at the bottom so the node doesn't
-          // collapse and crop it whenever ComfyUI recomputes the node height. When the
-          // reference features are hidden the panel is never built, so reserve nothing -
-          // the `|| 150` default would otherwise leave an empty strip below the prompt.
-          const charPanelH = !REFERENCE_FEATURES ? 0
-            : (self._timelineEditor ? (self._timelineEditor.charPanelHeight || 150) : 150);
-          const nodeWidth = self.size?.[0] || width || 1375;
-          return [Math.max(10, nodeWidth - 30), canvasH + propH + globalPropH + charPanelH + 160];
-        };
-
-        setTimeout(() => {
-          try {
-            self._timelineEditor = new TimelineEditor(self, container, widget);
-          } catch (err) {
-            console.error("[PromptRelay] timeline editor init failed:", err);
-          }
-        }, 0);
+        const windows = Array.isArray(app.extensions)
+          ? app.extensions.some((e) => e?.name === "StubeliusLTX.DirectorWindow")
+          : !!window.__stubeliusLtxDirectorWindow;
+        if (windows) self._ltxBuildClassic = buildClassic;
+        else buildClassic();
       };
 
       const onResize = nodeType.prototype.onResize;

@@ -1,7 +1,7 @@
 [project]
 name = "stubelius-ultimate-ltx25"
-description = "Stubelius Ultimate LTX 2.5 — the LTX 2.5 Director timeline plus a seed-hunt dashboard: seeds with sound, full-size refine of the winner, RIFE, RTX VSR / DLSS5. Forked from WhatDreamsCost's LTX Director via WhatDreamsCost-CSGlide."
-version = "2.0.1"
+description = "Stubelius Ultimate LTX 2.5 — LTX 2.5 in ComfyUI as four windows: Setup, Director (first, middle and last frames, prompts, motion, voice and characters on one timeline), Seeds (every seed side by side with its sound) and Output (up to 4K with DLSS5 or RTX VSR, RIFE). Forked from WhatDreamsCost's LTX Director via WhatDreamsCost-CSGlide."
+version = "2.1.0"
 license = {file = "LICENSE"}
 
 [project.urls]

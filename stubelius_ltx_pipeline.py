@@ -24,6 +24,7 @@ name at runtime and skipped (or reported clearly) when their pack isn't installe
 import itertools
 import logging
 import os
+import time
 import types
 
 import comfy.model_management
@@ -534,10 +535,13 @@ class StubeliusLTXSeeds:
         n = setup["seed_count"]
         # each seed's sampler/scheduler from the Seed Samplers box; the official pair when it's bypassed
         per_seed = setup.get("samplers") or [(DEFAULT_SAMPLER, DEFAULT_SCHEDULER)] * 4
-        outs, latents, audios, seeds, decoded = [], [], [], [], []
+        from .stubelius_ltx_windows import seed_stage
+        outs, latents, audios, seeds, decoded, seconds = [], [], [], [], [], []
         for k in range(n):
+            t0 = time.perf_counter()
             seed = (setup["seed"] + k * SEED_STEP) % (1 << 64)
             sampler, scheduler = per_seed[k]
+            seed_stage(unique_id, k + 1, n, seed)
             log.info("[StubeliusLTXSeeds] seed %d/%d: %d  %s/%s  %d steps  cfg %.2f", k + 1, n, seed,
                      sampler, scheduler, setup["steps"], setup["cfg"])
             sigmas = call_node("BasicScheduler", model=model_g, scheduler=scheduler,
@@ -551,12 +555,13 @@ class StubeliusLTXSeeds:
             audios.append(audio["samples"])
             seeds.append(seed)
             decoded.append((images, audio_out))   # the same tensors as the previews: no extra memory
+            seconds.append(time.perf_counter() - t0)
         outs += [ExecutionBlocker(None)] * (8 - len(outs))   # unused seeds: their previews are skipped
 
         takes = dict(token=next(_TOKENS), count=n, latents=latents, audio=audios, seeds=seeds,
                      samplers=per_seed[:n], cfg=setup["cfg"], model=model, positive=positive, negative=negative,
                      guide_data=guide_data, motion_guide_data=motion_guide_data, fps=float(frame_rate),
-                     scale=setup["scale"], decoded=decoded)
+                     scale=setup["scale"], decoded=decoded, seconds=seconds)
         return (*outs, takes)
 
 
@@ -672,12 +677,15 @@ class StubeliusLTXFinish:
     CATEGORY = "StubeliusLTX"
 
     def run(self, takes, models, output, winner, unique_id=None):
-        # The "stubelius_note" UI entry is shown on the node by js/stubelius_ltx_finish_note.js.
+        # The "stubelius_note" UI entry is shown on the node by js/stubelius_ltx_finish_note.js; the stages
+        # (finish_stage) are the Output window's steps.
+        from .stubelius_ltx_windows import finish_stage
         n = takes["count"]
         if int(winner) == 0:
             from comfy_execution.graph import ExecutionBlocker
             log.info("[StubeliusLTXFinish] WINNER 0 = hold: %d seed(s) rendered, finish skipped. "
                      "Set WINNER 1-%d and re-queue.", n, n)
+            finish_stage(unique_id, "hold", why="winner", seeds=n)
             pick = "1" if n == 1 else f"1-{n}"
             note = (f"Holding: {n} seed{'s' if n > 1 else ''} rendered, no final video yet.\n"
                     f"Set WINNER to the one you want ({pick}) and run again. Only the finish runs: "
@@ -690,12 +698,17 @@ class StubeliusLTXFinish:
                         winner, n, w)
         o = output
         full_size = takes.get("scale", 0.5) >= 0.999
+        seed_images = takes["decoded"][w - 1][0]
+        finish_stage(unique_id, "start", winner=w, seed=int(takes["seeds"][w - 1]), frames=int(seed_images.shape[0]),
+                     width=int(seed_images.shape[2]), height=int(seed_images.shape[1]), full_size=full_size,
+                     resolution=o["resolution"], fps=float(o["fps"]), upscaler=o["upscaler"])
         if full_size:
             # rendered at the Director's size already: a latent upscale + refine would only blur it
             images, audio = takes["decoded"][w - 1]
             log.info("[StubeliusLTXFinish] seeds are full size: winner %d finished as rendered (no latent upscale "
                      "or refine)", w)
         else:
+            finish_stage(unique_id, "refine")
             images, audio = self._refine(takes, models, w, o, unique_id)
         target = RESOLUTIONS.get(o["resolution"])
         source_fps = takes["fps"]
@@ -705,11 +718,13 @@ class StubeliusLTXFinish:
 
         fps = source_fps
         if o["fps"] > source_fps + 1e-6:
+            finish_stage(unique_id, "fps")
             from .stubelius_rife_fps import StubeliusLTXRIFEToFPS
             images, fps = StubeliusLTXRIFEToFPS().run(images, source_fps, o["fps"], "rife47.pth", True, True, 8)
 
         upscaled = bool(target and target / _short(images) > 1.02)
         if upscaled:
+            finish_stage(unique_id, "upscale")
             images = self._upscale(images, target, o["upscaler"])
         if target:
             images = _fit(images, target)   # exact size (DLSS5 only scales by fixed factors)
@@ -721,6 +736,12 @@ class StubeliusLTXFinish:
         note = f"Finished seed {w}: {images.shape[2]}x{images.shape[1]}, {fps:.3g} fps."
         if w != winner:
             note += f"\nWINNER {winner}, but only {n} seed{'s' if n > 1 else ''} rendered."
+        wave = (audio or {}).get("waveform")
+        finish_stage(unique_id, "done", winner=w, width=int(images.shape[2]), height=int(images.shape[1]), fps=float(fps),
+                     frames=int(images.shape[0]), seconds=round(int(images.shape[0]) / float(fps), 3),
+                     upscaler=o["upscaler"] if upscaled else None, refined=not full_size,
+                     rate=int((audio or {}).get("sample_rate") or 0),
+                     channels=int(wave.shape[1]) if torch.is_tensor(wave) and wave.dim() == 3 else 1)
         return {"ui": {"stubelius_note": [note]}, "result": (images, audio, float(fps))}
 
     @staticmethod

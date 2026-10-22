@@ -1,39 +1,67 @@
 
 # Stubelius Ultimate LTX 2.5
 
-The LTX 2.5 Director timeline node plus **Stubelius Ultimate LTX**: one clean LTX 2.5 workflow.
-Render 1–4 full seeds with sound, pick the winner, and only the winner gets refined at full size,
-frame-interpolated and upscaled.
+[![Watch the Ultimate LTX 2.5 video (version 2.1) on YouTube](docs/video-2.1.jpg)](https://youtu.be/0aRAocXqhBE)
+
+**▶ [Watch the 2.1 video on YouTube](https://youtu.be/0aRAocXqhBE)** (28 min). It goes through all four windows, from
+the first setting to the finished video, with first, middle and last frames in one shot, seeds side by side, a 2K
+finish and a retake of one moment.
+
+The LTX 2.5 Director timeline node plus **Stubelius Ultimate LTX**: one LTX 2.5 workflow for ComfyUI, in four
+windows. **Setup** decides **how** the seeds are rendered (Full size, Draft or Low VRAM, the models, the speed-ups).
+The **Director** holds **what the video is**: frames, prompts, motion, sound and characters on one timeline.
+**Seeds** plays 1–4 full seeds with sound side by side, you pick the winner, and only the winner gets finished in
+**Output** (resolution up to 4K, frame rate, upscaler).
 
 Install steps, settings and RTX 5090 render times: [the Stubelius Ultimate LTX 2.5 guide](https://stuubzzz.studio/blog/ltx-2-5-director-comfyui-multishot-timeline/).
 
 <div align="center">
-<a href="docs/ultimate_ltx_workflow.webp?raw=true"><img src="docs/ultimate_ltx_workflow.webp" alt="The Stubelius Ultimate LTX workflow in ComfyUI: setup, models and output on the left, the Director timeline in the middle, the seed previews and the final video on the right" /></a>
+<a href="docs/ultimate_ltx_workflow.webp?raw=true"><img src="docs/ultimate_ltx_workflow.webp" alt="Stubelius Ultimate LTX in ComfyUI: the How to use window, then Setup, Director, Seeds and Output, left to right" /></a>
 <br>
-<em>The workflow as it opens. Click the image to see it full size.</em>
+<em>The workflow after a render of the glassblower: three seeds, seed 3 picked and finished at 2K. Click the image to
+see it full size.</em>
 </div>
+
+## What's new in 2.1
+
+- **Four windows**: Setup, Director, Seeds and Output, six looks, a step bar on top of every window and a **How to
+  use** window next to them.
+- **The Director as a window**: keyframes (the last frame lands on the video's real last frame), prompts cut into
+  segments, motion, audio and the Cast for Licon MSR characters, all on one timeline.
+- **Seeds**: every seed side by side and in sync, solo, A/B split and full size. Pick the winner, or hunt new seeds.
+- **Output**: the finish settings (up to 4K, up to 120 fps with RIFE, DLSS5 + Color Lock or RTX VSR) next to a
+  split view with a loupe, the export and the last frame.
+- **Finish the winner** is one button in Seeds: only the finish runs. If the settings changed since the seeds, it
+  asks before it renders them again.
+- **Fixes**: a retake covers exactly the frames you set (it could start early), and the Director's Size field
+  shows the size the video will really have.
+
+To get the windows, open the example workflow again (below). A workflow from before opens the Director in its
+classic editor, with **Show as window** under it.
 
 ## Stubelius Ultimate LTX
 
 The workflow is in [`example_workflows/Stubelius_Ultimate_LTX.json`](example_workflows/Stubelius_Ultimate_LTX.json).
 Once the pack is installed it also appears in ComfyUI under **Workflow → Browse Templates → Stubelius-Ultimate-LTX2.5**.
-The HOW TO USE note inside the workflow explains every node.
 
-| Node | Job |
-|---|---|
-| **Stubelius LTX Setup** | How the seeds are rendered: 1–4 seeds, seed, steps, cfg, first-pass scale |
-| **Stubelius LTX Seed Samplers** | A sampler and scheduler for each seed; the slots past Setup's seed count are greyed out |
-| **Stubelius LTX Models** | Checkpoint (safetensors or GGUF), distill LoRA, two global LoRAs, IC-LoRA, MSR LoRA (with its first-pass strength), text encoder, VAEs, latent upscaler, attention (Sage or Comfy Kitchen), memory options, decode tile size, live preview |
-| **Stubelius LTX Output** | Refine strength / steps / sampler, the refine's MSR LoRA and reference strengths, keep or regenerate the seed's audio, final resolution (native up to 4K), final fps through RIFE, RTX VSR or DLSS5 + Color Lock |
-| **LTX Director CS (2.5)** | The timeline: prompts, images, audio and motion tracks, size, frame rate, duration |
-| **Stubelius LTX Seeds** | Renders the seeds at the first-pass scale, with sound, one preview each |
-| **Stubelius LTX Finish** | WINNER 1–4 (0 = hold after the seeds). Full-size seeds (first-pass scale 1.0, the default) are finished as rendered; smaller seeds get a latent x2 upscale + refine. Then RIFE and the upscaler. Changing it re-runs only the finish, from cache |
-| **Stubelius LTX Live Preview** | Watch Seeds and Finish while they sample |
-| **Stubelius LTX RIFE to FPS**, **Stubelius LTX Color Lock** | Frame rate conversion that keeps hard cuts clean; restores the original colours after DLSS5 |
-| **Stubelius LTX Theme** | Colour theme for this workflow only |
+It opens as four windows, left to right: **1 Setup → 2 Director → 3 Seeds → 4 Output**, with a step bar
+in each to jump between them. The HOW TO USE window next to them explains every one. The small nodes the
+windows edit sit behind them; move a window to reach one.
 
-**Seed hunt:** set seeds = 3 and WINNER = 0, queue, watch Seed 1–3, set WINNER on Finish and queue
-again. Only the finish runs; the seeds come from cache.
+| Window | Node | Job |
+|---|---|---|
+| **Setup** | **Stubelius LTX Setup**, **Seed Samplers**, **Models**, **Theme** | How the seeds are rendered (Full size, Draft or Low VRAM), 1–4 seeds, a sampler per seed, the checkpoint (safetensors or GGUF), distill / IC / MSR / global LoRAs, text encoder, VAEs, latent upscaler, attention, memory options, live preview, the colour theme |
+| **Director** | **LTX Director CS (2.5)** | The timeline: segments with prompts, pictures and clips, keyframes, motion clips (IC-LoRA), audio, references (Licon MSR), size, length, frame rate |
+| **Seeds** | **Stubelius LTX Seed Previews** | Every seed side by side, in sync, with its sound; pick the winner |
+| **Output** | **Stubelius LTX Finish**, **Output** | The finish of the winner: refine (half-size seeds only), final resolution (native up to 4K), final fps through RIFE, RTX VSR or DLSS5 + Color Lock, export |
+
+The other nodes: **Stubelius LTX Seeds** renders the seeds at the first-pass scale, with sound;
+**Stubelius LTX Live Preview** shows Seeds and Finish while they sample; **Stubelius LTX RIFE to FPS** and
+**Stubelius LTX Color Lock** convert the frame rate with clean hard cuts and restore the original colours
+after DLSS5.
+
+**Render** in the Director renders the seeds and stops; pick the winner in Seeds (or in the Director),
+then **Finish the winner**. Only the finish runs; the seeds come from cache.
 
 Every node and script in this pack has its own name, so it installs next to Stubelius Ultimate H3
 (MiniMax) without clashes.
@@ -92,14 +120,24 @@ Fallback Policy** to **Prefer No Sysmem Fallback**.
 
 ## The Director
 
+### The Director window
+
+In Stubelius Ultimate LTX the Director is a window: a preview of the latest seeds, an inspector for
+what you pick and a timeline with keyframes, prompts, motion, audio and references. A Director from an
+older workflow opens in the classic editor, with **Show as window** under it; **Settings → Classic
+editor** in the window goes back. Both write the same timeline, so a timeline renders the same from
+either. Chunk render, packed timelines and timeline files are in the classic editor.
+
 ### What works
 
 - Timeline with image, text, audio and video segments
 - Prompt zones and prompt relay
-- Image anchors and end frames (right click a segment → "pin to last frame")
+- Image anchors and end frames (in the window: Last frame on the Keyframes lane; in the classic editor:
+  right click a segment → "pin to last frame")
 - Multiple keyframes
-- Chunk render for long videos, with audio
-- Packed timelines (save a timeline with its assets embedded)
+- Retake a part of a video
+- Chunk render for long videos, with audio (classic editor)
+- Packed timelines (save a timeline with its assets embedded; classic editor)
 
 ### Reference images (Licon MSR)
 
