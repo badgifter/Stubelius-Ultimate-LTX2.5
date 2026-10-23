@@ -21,6 +21,7 @@ Finish  turns the WINNER into the final video: as rendered when the seeds are fu
 Speed/memory patches, the live preview and the RTX VSR / DLSS5 / GGUF nodes are called by class
 name at runtime and skipped (or reported clearly) when their pack isn't installed.
 """
+import importlib.util
 import itertools
 import logging
 import os
@@ -41,7 +42,7 @@ SEED_STEP = 1000003     # seed k = seed + (k - 1) * SEED_STEP, as the old Seed H
 # The official LTX 2.5 first pass: euler_ancestral; linear_quadratic at 8 steps gives exactly its
 # distilled sigmas (1.0 ... 0.975, 0.909, 0.725, 0.422, 0). Used when the Seed Samplers box is bypassed.
 DEFAULT_SAMPLER, DEFAULT_SCHEDULER = "euler_ancestral", "linear_quadratic"
-UPSCALERS = ["RTX VSR", "DLSS5 + Color Lock"]
+UPSCALERS = ["RTX VSR", "DLSS5 + Color Lock", "upscale model"]
 AUDIO_MODES = ["keep the seed's audio", "regenerate in the refine"]
 DLSS5_FACTORS = {1.5: "1.5x (Quality)", 1.724: "1.724x (Balanced)", 2.0: "2x (Performance)",
                  3.0: "3x (Ultra Performance)"}
@@ -254,8 +255,13 @@ class LTXModels:
                 m, _ = comfy.sd.load_lora_for_models(m, None, comfy.utils.load_torch_file(path, safe_load=True),
                                                      strength, 0)
         # Sage (KJ) and Comfy Kitchen (core) both set the model's attention override, so one or the other
+        has_sage = importlib.util.find_spec("sageattention") is not None
         if c["attention"] == "sage attention":
-            m = _patch(m, "PathchSageAttentionKJ", "sage attention", sage_attention="auto", allow_compile=False)
+            if has_sage:
+                m = _patch(m, "PathchSageAttentionKJ", "sage attention", sage_attention="auto", allow_compile=False)
+            else:
+                log.warning("[StubeliusLTXModels] sage attention skipped: the sageattention package is not installed "
+                            "(CUDA only, so never on a Mac); ComfyUI's default attention is used")
         elif c["attention"] == "comfy kitchen attention":
             import comfy.ldm.modules.attention as attention
             if attention.COMFY_KITCHEN_INT8_ATTENTION_IS_AVAILABLE:
@@ -264,7 +270,11 @@ class LTXModels:
                 log.warning("[StubeliusLTXModels] comfy kitchen attention skipped: this comfy-kitchen build has no "
                             "INT8 attention (Nvidia / AMD only); ComfyUI's default attention is used")
         if c["memory_efficient_attention"]:
-            m = _patch(m, "LTX2MemoryEfficientSageAttentionPatch", "memory-efficient attention", triton_kernels=True)
+            if has_sage:
+                m = _patch(m, "LTX2MemoryEfficientSageAttentionPatch", "memory-efficient attention", triton_kernels=True)
+            else:
+                log.warning("[StubeliusLTXModels] memory-efficient attention skipped: it runs on SageAttention, "
+                            "which is not installed")
         if c["chunk_feed_forward"]:
             m = _patch(m, "LTXVChunkFeedForward", "chunk feed-forward", chunks=2, dim_threshold=4096)
         _PATCHED[self.model_key] = m
@@ -464,7 +474,9 @@ class StubeliusLTXOutput:
                     "frames; length and sync kept."}),
                 "upscaler": (UPSCALERS, {"default": "RTX VSR", "tooltip":
                     "Used when the final resolution needs an upscale. DLSS5 adds far more detail; Color Lock "
-                    "then restores the original colours. Needs ComfyUI-DLSS5-Enhancer."}),
+                    "then restores the original colours. Needs ComfyUI-DLSS5-Enhancer. upscale model: an "
+                    "ESRGAN-type model from models/upscale_models, any GPU (Mac too); also what RTX VSR and "
+                    "DLSS5 fall back to when their nodes aren't installed."}),
             }
         }
 
@@ -632,6 +644,28 @@ def _dlss5(images, need):
     return call_node("DLSS5EnhanceImages", images=images, settings=settings, verify_neural_rendering=True)[0]
 
 
+def _model_upscale(images, short_side, batch=8):
+    """An ESRGAN-type model from models/upscale_models (any GPU, Mac too), a 2x one preferred up to
+    2x. Each batch goes to the exact size at once, so the model-scale frames never all exist."""
+    names = folder_paths.get_filename_list("upscale_models")
+    name = _first_match(names, "x2", "2x") if short_side / _short(images) <= 2.0 else _first_match(names, "x4", "4x")
+    if not name:
+        log.warning("[StubeliusLTXFinish] no model in models/upscale_models: upscaling bicubic")
+        return _fit(images, short_side)
+    log.info("[StubeliusLTXFinish] upscaling with %s", name)
+    model = call_node("UpscaleModelLoader", model_name=name)[0]
+    width, height = _target_size(images, short_side)
+    out = torch.empty((images.shape[0], height, width, images.shape[3]), dtype=images.dtype)
+    for i in range(0, images.shape[0], batch):
+        part = images[i:i + batch]
+        for _ in range(3):   # a 2x model takes two passes to 4K
+            if short_side / _short(part) <= 1.02:
+                break
+            part = call_node("ImageUpscaleWithModel", upscale_model=model, image=part)[0]
+        out[i:i + part.shape[0]] = _fit(part, short_side, inplace=True)
+    return out
+
+
 def _ram_check(images, target, source_fps, fps):
     """The finished frames are held uncompressed (width x height x 12 bytes each). Say so up front
     when they alone won't fit in RAM, instead of letting the job crawl through the pagefile."""
@@ -759,14 +793,18 @@ class StubeliusLTXFinish:
 
     @staticmethod
     def _upscale(images, short_side, upscaler):
+        if upscaler == "upscale model":
+            return _model_upscale(images, short_side)
         if upscaler == "RTX VSR":
             if _cls("RTXVideoSuperResolution") is None:
-                raise RuntimeError("[StubeliusLTXFinish] 'RTX VSR' needs the Nvidia RTX nodes installed "
-                                   "(Comfy-Org/Nvidia_RTX_Nodes_ComfyUI). Pick 'DLSS5 + Color Lock' or install them.")
+                log.warning("[StubeliusLTXFinish] 'RTX VSR' needs the Nvidia RTX nodes "
+                            "(Comfy-Org/Nvidia_RTX_Nodes_ComfyUI), not installed: using 'upscale model'")
+                return _model_upscale(images, short_side)
             return _vsr(images, short_side)
         if _cls("DLSS5EnhanceImages") is None:
-            raise RuntimeError("[StubeliusLTXFinish] 'DLSS5 + Color Lock' needs ComfyUI-DLSS5-Enhancer installed. "
-                               "Pick 'RTX VSR' or install it.")
+            log.warning("[StubeliusLTXFinish] 'DLSS5 + Color Lock' needs ComfyUI-DLSS5-Enhancer, not installed: "
+                        "using 'upscale model'")
+            return _model_upscale(images, short_side)
         try:
             enhanced = _dlss5(images, short_side / _short(images))
         except RuntimeError as e:

@@ -9,7 +9,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import av
-from PIL import Image
+from PIL import Image, ImageOps
 
 import os
 import platform
@@ -149,6 +149,12 @@ def _preprocess_prompts_with_characters(global_prompt, local_prompts, char1="", 
     return gp, " | ".join(processed_locals)
 
 
+def _open_rgb(src) -> Image.Image:
+    """Open an image upright, as the browser shows it: phone photos store their pixels sideways
+    with an EXIF orientation tag (as ComfyUI's Load Image does, apply it)."""
+    return ImageOps.exif_transpose(Image.open(src)).convert("RGB")
+
+
 def _load_image_source(b64_or_url: str, filename: str = None) -> torch.Tensor:
     """Load a reference image from a base64 string, a Comfy /view URL, or an input filename."""
     if not b64_or_url and not filename:
@@ -164,7 +170,7 @@ def _load_image_source(b64_or_url: str, filename: str = None) -> torch.Tensor:
             if fname:
                 file_path = os.path.join(folder_paths.get_input_directory(), subfolder, fname)
                 if os.path.exists(file_path):
-                    img = Image.open(file_path).convert("RGB")
+                    img = _open_rgb(file_path)
                     arr = np.array(img, dtype=np.float32) / 255.0
                     return torch.from_numpy(arr).unsqueeze(0)
         except Exception as e:
@@ -173,7 +179,7 @@ def _load_image_source(b64_or_url: str, filename: str = None) -> torch.Tensor:
     if filename:
         file_path = os.path.join(folder_paths.get_input_directory(), filename)
         if os.path.exists(file_path):
-            img = Image.open(file_path).convert("RGB")
+            img = _open_rgb(file_path)
             arr = np.array(img, dtype=np.float32) / 255.0
             return torch.from_numpy(arr).unsqueeze(0)
 
@@ -183,7 +189,7 @@ def _load_image_source(b64_or_url: str, filename: str = None) -> torch.Tensor:
             if "," in b64_str:
                 b64_str = b64_str.split(",", 1)[1]
             img_bytes = base64.b64decode(b64_str)
-            img = Image.open(_io.BytesIO(img_bytes)).convert("RGB")
+            img = _open_rgb(_io.BytesIO(img_bytes))
             arr = np.array(img, dtype=np.float32) / 255.0
             return torch.from_numpy(arr).unsqueeze(0)
         except Exception as e:
@@ -710,7 +716,7 @@ def _load_image_tensor(seg: dict) -> torch.Tensor:
     if seg.get("imageFile"):
         file_path = os.path.join(folder_paths.get_input_directory(), seg["imageFile"])
         if os.path.exists(file_path):
-            img = Image.open(file_path).convert("RGB")
+            img = _open_rgb(file_path)
             arr = np.array(img, dtype=np.float32) / 255.0
             return torch.from_numpy(arr).unsqueeze(0)
 
@@ -723,7 +729,7 @@ def _load_image_tensor(seg: dict) -> torch.Tensor:
     
     try:
         img_bytes = base64.b64decode(b64_str)
-        img = Image.open(_io.BytesIO(img_bytes)).convert("RGB")
+        img = _open_rgb(_io.BytesIO(img_bytes))
         arr = np.array(img, dtype=np.float32) / 255.0
         return torch.from_numpy(arr).unsqueeze(0)
     except:
@@ -749,7 +755,7 @@ def _load_image_sequence_tensor(seg: dict) -> torch.Tensor:
             log.warning("[LTXDirector] Handoff frame missing: %s", file_path)
             continue
         try:
-            img = Image.open(file_path).convert("RGB")
+            img = _open_rgb(file_path)
             frames.append(np.array(img, dtype=np.float32) / 255.0)
         except Exception as e:
             log.warning("[LTXDirector] Could not read handoff frame %s: %s", file_path, e)
@@ -930,6 +936,56 @@ def _compress_image(tensor: torch.Tensor, crf: int) -> torch.Tensor:
         return tensor
 
 
+def _decode_audio(src, target_sr: int):
+    """Decode a file path or buffer with PyAV to a [2, samples] float32 tensor at target_sr, or None."""
+    clip_frames = []
+    with av.open(src) as container:
+        if not container.streams.audio:
+            return None
+        stream = container.streams.audio[0]
+
+        # Setup resampler to ensure output is target_sr, Stereo, Float32 Planar
+        resampler = av.AudioResampler(
+            format='fltp',
+            layout='stereo',
+            rate=target_sr,
+        )
+
+        for frame in container.decode(stream):
+            for resampled_frame in resampler.resample(frame):
+                # to_ndarray() on fltp gives shape (channels, samples)
+                clip_frames.append(torch.from_numpy(resampled_frame.to_ndarray()))
+
+        # Flush the resampler to get any remaining samples
+        for resampled_frame in resampler.resample(None):
+            clip_frames.append(torch.from_numpy(resampled_frame.to_ndarray()))
+
+    if not clip_frames:
+        return None
+    return torch.cat(clip_frames, dim=1)
+
+
+def _encode_audio(audio_vae, waveform, sample_rate):
+    """Encode a [B, channels, samples] waveform; ComfyUI VAE wrappers expect (batch, samples,
+    channels), a raw AudioVAE a dict with waveform in (batch, channels, samples)."""
+    if hasattr(audio_vae, "first_stage_model"):
+        return audio_vae.encode(waveform.movedim(1, -1))
+    return audio_vae.encode({"waveform": waveform, "sample_rate": sample_rate})
+
+
+# The AVref voice slot of the Licon MSR V2 LoRA holds 5 seconds; the start of the clip is used.
+VOICE_SECONDS = 5.0
+
+
+def _encode_voice(audio_vae, name):
+    """A character's voice clip (an input file) as an audio latent, for Licon MSR voice slots."""
+    path = _resolve_asset(name)
+    waveform = _decode_audio(path, 44100) if path else None
+    if waveform is None:
+        raise ValueError(f"[LTXDirector] Could not load the voice clip {name!r}.")
+    return _encode_audio(audio_vae, waveform[:, :int(VOICE_SECONDS * 44100)].unsqueeze(0), 44100)
+
+
 def _build_combined_audio(timeline_data_str: str, start_frame: int, duration_frames: int, frame_rate: float, override_audio: bool = False) -> dict:
     """Parses timeline JSON, loads/trims audio directly from memory using PyAV, 
     and aligns to a global timeline yielding ComfyUI's format.
@@ -991,37 +1047,9 @@ def _build_combined_audio(timeline_data_str: str, start_frame: int, duration_fra
             continue
 
         try:
-            clip_frames = []
-            
-            # Use PyAV to decode directly from memory buffer
-            with av.open(buffer) as container:
-                if not container.streams.audio:
-                    continue
-                stream = container.streams.audio[0]
-                
-                # Setup resampler to ensure output is 44.1kHz, Stereo, Float32 Planar
-                resampler = av.AudioResampler(
-                    format='fltp',
-                    layout='stereo',
-                    rate=target_sr,
-                )
-                
-                for frame in container.decode(stream):
-                    for resampled_frame in resampler.resample(frame):
-                        # to_ndarray() on fltp gives shape (channels, samples)
-                        arr = resampled_frame.to_ndarray()
-                        clip_frames.append(torch.from_numpy(arr))
-                
-                # Flush the resampler to get any remaining samples
-                for resampled_frame in resampler.resample(None):
-                    arr = resampled_frame.to_ndarray()
-                    clip_frames.append(torch.from_numpy(arr))
-
-            if not clip_frames:
+            waveform = _decode_audio(buffer, target_sr) # Shape: [2, total_clip_samples]
+            if waveform is None:
                 continue
-
-            # Concatenate all frame blocks along the samples dimension (dim 1)
-            waveform = torch.cat(clip_frames, dim=1) # Shape: [2, total_clip_samples]
 
             # Calculate interactive trim boundaries
             trim_start_frames = float(seg.get("trimStart", 0))
@@ -1411,6 +1439,7 @@ class LTXDirector(io.ComfyNode):
         # characters = [{ "images": [{"b64":..., "name":...}], "description": "..." }, ...]
         char_images = []          # flat list of every reference image tensor
         char_slot_images = []     # per-slot tensors, for @char tag filtering in MSR mode
+        char_voices = []          # per-slot voice clip (input file name), "" = none; Licon MSR only
         char1_val, char2_val, char3_val, char4_val, char5_val = "", "", "", "", ""
         try:
             characters = tdata.get("characters", [])
@@ -1439,8 +1468,11 @@ class LTXDirector(io.ComfyNode):
                     char_images.append(tensor)
                     slot_tensors.append(tensor)
                 char_slot_images.append(slot_tensors)
+                char_voices.append((char_info.get("voice") or {}).get("name", ""))
         except Exception as e:
             log.warning("[LTXDirector] Could not process character slot inputs: %s", e)
+        if any(char_voices) and reference_mode != "Licon MSR (Prefix)":
+            log.warning("[LTXDirector] Voice clips on @ref slots need the Licon MSR ref option; ignored.")
 
         # --- @charN substitution ---
         # Ghost Mask / OFF: swap @char tags for their VLM descriptions in the prompt text.
@@ -1648,12 +1680,15 @@ class LTXDirector(io.ComfyNode):
             _tag_pairs = [("@character1", "@char1", "@ref1"), ("@character2", "@char2", "@ref2"), ("@character3", "@char3", "@ref3"),
                           ("@character4", "@char4", "@ref4"), ("@character5", "@char5", "@ref5")]
             _referenced_slots = [i for i, tags in enumerate(_tag_pairs) if any(t in _prompt_text for t in tags)]
-            _selected = []
-            for _slot in _referenced_slots:
-                if _slot < len(char_slot_images):
-                    _selected.extend(char_slot_images[_slot])
-            if not _selected:
-                _selected = char_images
+            _slots = [s for s in _referenced_slots if s < len(char_slot_images) and char_slot_images[s]]
+            if not _slots:
+                _slots = range(len(char_slot_images))
+            # A character's voice goes to the MSR slot of its first image.
+            _selected, _voice_names = [], []
+            for _slot in _slots:
+                if char_voices[_slot] and char_slot_images[_slot]:
+                    _voice_names.append((len(_selected) + 1, char_voices[_slot]))
+                _selected.extend(char_slot_images[_slot])
             log.info("[LTXDirector] MSR slideshow subjects: referenced slots=%s, images=%d", _referenced_slots, len(_selected))
 
             identity_images = [
@@ -1672,6 +1707,14 @@ class LTXDirector(io.ComfyNode):
             _msr25_refs = []
             for _si, _img in enumerate(identity_images[:5]):
                 _msr25_refs.append(("ref%d" % (_si + 1), _img, False))
+
+            _voices = []
+            for _slot_id, _name in _voice_names:
+                if _slot_id > len(_msr25_refs):
+                    continue
+                if audio_vae is None:
+                    raise ValueError("A character has a voice clip: connect the audio VAE to LTX Director.")
+                _voices.append((_slot_id, _encode_voice(audio_vae, _name)))
 
             # "Ingredients": the optional ref_images IMAGE input (an upload/batch of extra
             # reference pictures - objects, props, outfits) joins the MSR reference set
@@ -1716,6 +1759,7 @@ class LTXDirector(io.ComfyNode):
                 "references": _msr25_refs,
                 "strength": float(reference_strength),
                 "reference_frames": int(_msr_frames),
+                "voices": _voices,
             }
             log.info(
                 "[LTXDirector] Stubelius MSR25 Engine: %d references, reference_frames=%d, clean=%d latent frames.",
@@ -1839,15 +1883,7 @@ class LTXDirector(io.ComfyNode):
                                 f"Expected custom audio waveform with 2 or 3 dims, got shape {tuple(waveform.shape)}"
                             )
 
-                        # Wrapped ComfyUI VAE expects (batch, samples, channels);
-                        # raw AudioVAE expects a dict with waveform in (batch, channels, samples).
-                        if hasattr(audio_vae, "first_stage_model"):
-                            latent_samples = audio_vae.encode(waveform.movedim(1, -1))
-                        else:
-                            latent_samples = audio_vae.encode({
-                                "waveform": waveform,
-                                "sample_rate": audio_out["sample_rate"],
-                            })
+                        latent_samples = _encode_audio(audio_vae, waveform, audio_out["sample_rate"])
                         
                         if latent_samples.numel() == 0:
                             raise ValueError("Encoded audio latent is empty (0 elements).")

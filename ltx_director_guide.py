@@ -379,7 +379,7 @@ class LTXDirectorGuide:
                 "Licon MSR mode is active on the timeline, but msr_lora_name is 'None'. "
                 "Select the LTX-2.5 MSR LoRA on the LTX Director Guide node."
             )
-        model, slot_state, msr_downscale = msr25_engine.load_msr25_lora(
+        model, slot_state, voice_slots, msr_downscale = msr25_engine.load_msr25_lora(
             model, msr_lora_name, msr_lora_strength
         )
         strength = float(msr25.get("strength", 1.0))
@@ -395,6 +395,10 @@ class LTXDirectorGuide:
             msr25["references"], strength, msr25.get("reference_frames", 33),
             downscale=msr_downscale,
         )
+        if msr25.get("voices"):
+            model, positive, negative = msr25_engine.attach_voices(
+                model, positive, negative, msr25["voices"], voice_slots, len(msr25["references"])
+            )
         prev_crop = _get_exact_crop_count_from_conditioning(positive)
         new_crop = int(prev_crop) + int(appended)
         positive = node_helpers.conditioning_set_values(positive, {"nghtdrp_guide_crop_latent_frames": new_crop})
