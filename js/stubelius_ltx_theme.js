@@ -108,6 +108,7 @@ function apply() {
     ownsCanvasBg = false;
     if (name) clearOurColours(graph);
     canvas?.setDirty(true, true);
+    window.dispatchEvent(new CustomEvent("stubelius-ltx-theme"));   // the windows (js/ulx_ui.js) follow
     return;
   }
 
@@ -133,6 +134,7 @@ function apply() {
     if (k in stageByGroup) g.color = p.s[stageByGroup[k]];
   }
   canvas?.setDirty(true, true);
+  window.dispatchEvent(new CustomEvent("stubelius-ltx-theme"));
 }
 
 // Clearing runs at once; applying waits until the other extensions' deferred work (another pack's

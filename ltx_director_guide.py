@@ -501,10 +501,17 @@ class LTXDirectorGuide:
 
             start_frame = int(guide_data.get("start_frame", 0))
             relative_start = max(0, retake_start - start_frame)
-            
-            l_start = relative_start // time_scale_factor
-            l_end = int(math.ceil((relative_start + retake_len) / time_scale_factor))
-            
+
+            # The latents that hold frames relative_start .. relative_start + retake_len - 1. Latent 0 is frame 0 alone
+            # and latent k holds frames 8k-7 .. 8k (the motion guides below use the same mapping); a plain division
+            # by 8 moved the window a latent early, starting up to 14 frames before its first frame and stopping short
+            # of its last.
+            def latent_of(frame):
+                return (frame + time_scale_factor - 1) // time_scale_factor if frame > 0 else 0
+
+            l_start = latent_of(relative_start)
+            l_end = latent_of(relative_start + retake_len - 1) + 1 if retake_len > 0 else l_start
+
             l_start = min(l_start, latent_length)
             l_end = min(l_end, latent_length)
 

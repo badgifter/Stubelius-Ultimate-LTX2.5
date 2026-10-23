@@ -638,7 +638,7 @@ const STYLES = `
   }
   /* --- Character reference slots --- */
   .prcs-characters-container { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; margin-bottom: 4px; box-sizing: border-box; width: 100%; flex-shrink: 0; }
-  .prcs-character-slot { flex: 1; background: #1e1e1e; border: 1.5px dashed #444; border-radius: 8px; height: 128px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 4px; position: relative; cursor: pointer; overflow: hidden; transition: all 0.2s ease; box-sizing: border-box; }
+  .prcs-character-slot { flex: 1; background: #1e1e1e; border: 1.5px dashed #444; border-radius: 8px; height: 120px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 4px; position: relative; cursor: pointer; overflow: hidden; transition: all 0.2s ease; box-sizing: border-box; }
   .prcs-character-slot:hover { border-color: #666; background: #252525; }
   .prcs-character-slot.drag-over { border-color: #4fff8f; background: rgba(79, 255, 143, 0.05); }
   .prcs-character-label { font-size: 10px; font-weight: bold; color: #888; margin-bottom: 2px; pointer-events: none; }
@@ -653,10 +653,6 @@ const STYLES = `
   .prcs-character-validate-btn.loading { background: #333; color: #888; cursor: wait; pointer-events: none; }
   .prcs-character-desc { width: 100%; height: 38px; background: #111; color: #e0e0e0; border: 1px solid #333; border-radius: 4px; font-size: 9px; resize: none; box-sizing: border-box; padding: 2px 4px; margin-top: 10px; outline: none; font-family: inherit; z-index: 10; }
   .prcs-character-desc:focus { border-color: #4fff8f; }
-  .prcs-character-voice { display: flex; align-items: center; gap: 3px; width: 100%; height: 14px; margin-top: 3px; padding: 0 3px; box-sizing: border-box; background: #111; border: 1px solid #333; border-radius: 3px; color: #8fe3d6; font-size: 9px; cursor: default; }
-  .prcs-character-voice span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .prcs-character-voice svg { width: 9px; height: 9px; flex-shrink: 0; }
-  .prcs-character-voice-delete { display: flex; background: none; border: none; color: #ff4444; padding: 0; cursor: pointer; }
   /* --- @char autocomplete popup --- */
   .prcs-autocomplete-menu { position: fixed; background: #181818; border: 1px solid #444; border-radius: 6px; padding: 4px; display: flex; flex-direction: column; gap: 2px; z-index: 100000; box-shadow: 0 4px 16px rgba(0,0,0,0.6); min-width: 180px; max-height: 200px; overflow-y: auto; }
   .prcs-autocomplete-item { background: #252525; color: #aaa; border: 1px solid #333; border-radius: 4px; padding: 6px 12px; font-size: 11px; font-family: monospace; cursor: pointer; text-align: left; display: flex; align-items: center; justify-content: space-between; transition: all 0.15s ease; }
@@ -907,8 +903,7 @@ function parseInitial(jsonStr) {
       if (Array.isArray(p.characters)) {
         parsed.characters = p.characters.map(c => ({
           images: Array.isArray(c.images) ? c.images : [],
-          description: c.description || "",
-          ...(c.voice ? { voice: c.voice } : {})
+          description: c.description || ""
         }));
         while (parsed.characters.length < 5) {
           parsed.characters.push({ images: [], description: "" });
@@ -9378,7 +9373,6 @@ class TimelineEditor {
       const slot = document.createElement("div");
       slot.className = "prcs-character-slot";
       slot.dataset.index = i;
-      slot.title = "Drop reference images here. In Licon MSR, drop an audio clip to give this character its voice: the prompt's lines are spoken in it, the clip itself is not played.";
 
       slot.addEventListener("dragover", (e) => {
         e.preventDefault();
@@ -9400,12 +9394,11 @@ class TimelineEditor {
       slot.addEventListener("click", (e) => {
         if (e.target.closest(".prcs-character-delete") ||
             e.target.closest(".prcs-character-validate-btn") ||
-            e.target.closest(".prcs-character-desc") ||
-            e.target.closest(".prcs-character-voice")) return;
+            e.target.closest(".prcs-character-desc")) return;
 
         const fi = document.createElement("input");
         fi.type = "file";
-        fi.accept = "image/*,audio/*";
+        fi.accept = "image/*";
         fi.multiple = true;
         fi.addEventListener("change", (ev) => {
           if (ev.target.files) {
@@ -9425,23 +9418,7 @@ class TimelineEditor {
     this.updateCharacterSlotsUI();
   }
 
-  async handleCharacterVoiceUpload(file, idx) {
-    const body = new FormData();
-    body.append("image", file);
-    body.append("subfolder", ASSET_SUBFOLDER);
-    const resp = await api.fetchApi("/upload/image", { method: "POST", body });
-    if (resp.status !== 200) {
-      console.error("[LTXDirector] voice upload failed:", resp.statusText);
-      return;
-    }
-    const data = await resp.json();
-    this.timeline.characters[idx].voice = { name: data.subfolder ? data.subfolder + "/" + data.name : data.name };
-    this.updateCharacterSlotsUI();
-    this.commitChanges();
-  }
-
   handleCharacterImageUpload(file, idx) {
-    if (file.type.startsWith("audio/")) return this.handleCharacterVoiceUpload(file, idx);
     if (!file.type.startsWith("image/")) return;
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -9633,28 +9610,6 @@ class TimelineEditor {
 
         slot.appendChild(label);
         slot.appendChild(placeholder);
-      }
-
-      if (data.voice) {
-        const voice = document.createElement("div");
-        voice.className = "prcs-character-voice";
-        voice.title = `Voice of @ref${i + 1} (Licon MSR): its first 5 seconds set how this character sounds.`;
-        voice.innerHTML = ICONS.audio;
-        const name = document.createElement("span");
-        name.textContent = data.voice.name.split("/").pop();
-        voice.appendChild(name);
-        const del = document.createElement("button");
-        del.className = "prcs-character-voice-delete";
-        del.innerHTML = ICONS.close;
-        del.title = "Remove Voice";
-        del.addEventListener("click", (e) => {
-          e.stopPropagation();
-          delete this.timeline.characters[i].voice;
-          this.updateCharacterSlotsUI();
-          this.commitChanges();
-        });
-        voice.appendChild(del);
-        slot.appendChild(voice);
       }
     }
   }
@@ -9984,8 +9939,7 @@ class TimelineEditor {
       analyzeModel: this.timeline.analyzeModel || "",
       characters: (this.timeline.characters || []).map(c => ({
         images: (c.images || []).map(img => img.b64 ? { b64: img.b64, name: img.name } : { name: img.name }),
-        description: c.description || "",
-        ...(c.voice ? { voice: { name: c.voice.name } } : {})
+        description: c.description || ""
       })),
       segments: sortedSegments.map(s => {
         const { imgObj, videoEl, _isSeeking, thumbnails, _extractingThumbs, _sSecs, _lSecs, _tSecs, _dSecs, _uploading, _blobUrl, ...rest } = s;
@@ -11600,8 +11554,7 @@ class TimelineEditor {
         analyzeModel: this.timeline.analyzeModel || "",
         characters: (this.timeline.characters || []).map(c => ({
           images: (c.images || []).map(img => img.b64 ? { b64: img.b64, name: img.name } : { name: img.name }),
-          description: c.description || "",
-          ...(c.voice ? { voice: { name: c.voice.name } } : {})
+          description: c.description || ""
         })),
         segments: (this.timeline.segments || []).map(s => {
           const { imgObj, videoEl, _isSeeking, thumbnails, _extractingThumbs, _sSecs, _lSecs, _tSecs, _dSecs, _uploading, _blobUrl, ...rest } = s;
@@ -12004,9 +11957,6 @@ class TimelineEditor {
     (timeline.characters || []).forEach(c => (c.images || []).forEach(img => {
       if (img && !img.b64 && typeof img.name === "string" && img.name) visit(img, "name");
     }));
-    (timeline.characters || []).forEach(c => {
-      if (c.voice && typeof c.voice.name === "string" && c.voice.name) visit(c.voice, "name");
-    });
   }
 
   // Re-encode an image blob as JPEG. Packed timelines are otherwise dominated by the
@@ -13986,57 +13936,63 @@ app.registerExtension({
           ["custom_width", "custom_height", "frame_rate", "resize_method", "reference_strength"].forEach(n => { hideWidget(getW(n)); });
           ensureTimingHidden();
         };
-        // The properties panel's widget preview writes its own width into widget.width and
-        // never clears it; the canvas then sizes these DOM widgets from that instead of the
-        // node, squeezing the settings columns to the panel's width. They always span the node.
-        const spanNode = (w) => Object.defineProperty(w, "width", { configurable: true, get: () => undefined, set: () => { } });
-        const settingsContainer = document.createElement("div");
-        settingsContainer.style.boxSizing = "border-box";
-        _ltxForwardWheelToGraph(settingsContainer);
-        _ltxBuildSettingsPanel(this, settingsContainer);
-        const settingsWidget = this.addDOMWidget("ltx_settings_ui", "ltx_settings_ui", settingsContainer, {
-          getValue: () => "",
-          setValue: () => { },
-        });
-        settingsWidget.computeSize = function () { return [0, 184]; };
-        spanNode(settingsWidget);
-        const _ltxOrigOnConfigure = this.onConfigure;
-        this.onConfigure = function () {
-          if (_ltxOrigOnConfigure) _ltxOrigOnConfigure.apply(this, arguments);
-          if (this._ltxSettingsRefresh) { try { this._ltxSettingsRefresh(); } catch (e) {} }
+        // The settings panel and the timeline editor. With the Director window loaded (js/ulx_director.js) it
+        // decides, once the workflow's own properties are in, between itself and this classic editor, and calls
+        // this for the classic one; without it the classic editor is built straight away, as before.
+        const buildClassic = () => {
+          if (self._ltxClassicBuilt) return;
+          self._ltxClassicBuilt = true;
+          const settingsContainer = document.createElement("div");
+          settingsContainer.style.boxSizing = "border-box";
+          _ltxForwardWheelToGraph(settingsContainer);
+          _ltxBuildSettingsPanel(self, settingsContainer);
+          const settingsWidget = self.addDOMWidget("ltx_settings_ui", "ltx_settings_ui", settingsContainer, {
+            getValue: () => "",
+            setValue: () => { },
+          });
+          settingsWidget.computeSize = function () { return [0, 184]; };
+          const _ltxOrigOnConfigure = self.onConfigure;
+          self.onConfigure = function () {
+            if (_ltxOrigOnConfigure) _ltxOrigOnConfigure.apply(this, arguments);
+            if (this._ltxSettingsRefresh) { try { this._ltxSettingsRefresh(); } catch (e) {} }
+          };
+
+          const container = document.createElement("div");
+
+          container.style.boxSizing = "border-box";
+          _ltxForwardWheelToGraph(container);
+          const widget = self.addDOMWidget("timeline_ui", "timeline_ui", container, {
+            getValue: () => "",
+            setValue: () => { },
+          });
+
+          widget.computeSize = function (width) {
+            const canvasH = self._timelineEditor ? self._timelineEditor.canvasHeight : CANVAS_HEIGHT;
+            const propH = self._timelineEditor ? (self._timelineEditor.propHeight || 90) : 90;
+            const globalPropH = self._timelineEditor ? (self._timelineEditor.globalPropHeight || 60) : 60;
+            // Reserve room for the @char reference panel at the bottom so the node doesn't
+            // collapse and crop it whenever ComfyUI recomputes the node height. When the
+            // reference features are hidden the panel is never built, so reserve nothing -
+            // the `|| 150` default would otherwise leave an empty strip below the prompt.
+            const charPanelH = !REFERENCE_FEATURES ? 0
+              : (self._timelineEditor ? (self._timelineEditor.charPanelHeight || 150) : 150);
+            const nodeWidth = self.size?.[0] || width || 1375;
+            return [Math.max(10, nodeWidth - 30), canvasH + propH + globalPropH + charPanelH + 160];
+          };
+
+          setTimeout(() => {
+            try {
+              self._timelineEditor = new TimelineEditor(self, container, widget);
+            } catch (err) {
+              console.error("[PromptRelay] timeline editor init failed:", err);
+            }
+          }, 0);
         };
-
-        const container = document.createElement("div");
-
-        container.style.boxSizing = "border-box";
-        _ltxForwardWheelToGraph(container);
-        const widget = this.addDOMWidget("timeline_ui", "timeline_ui", container, {
-          getValue: () => "",
-          setValue: () => { },
-        });
-        spanNode(widget);
-
-        widget.computeSize = function (width) {
-          const canvasH = self._timelineEditor ? self._timelineEditor.canvasHeight : CANVAS_HEIGHT;
-          const propH = self._timelineEditor ? (self._timelineEditor.propHeight || 90) : 90;
-          const globalPropH = self._timelineEditor ? (self._timelineEditor.globalPropHeight || 60) : 60;
-          // Reserve room for the @char reference panel at the bottom so the node doesn't
-          // collapse and crop it whenever ComfyUI recomputes the node height. When the
-          // reference features are hidden the panel is never built, so reserve nothing -
-          // the `|| 150` default would otherwise leave an empty strip below the prompt.
-          const charPanelH = !REFERENCE_FEATURES ? 0
-            : (self._timelineEditor ? (self._timelineEditor.charPanelHeight || 150) : 150);
-          const nodeWidth = self.size?.[0] || width || 1375;
-          return [Math.max(10, nodeWidth - 30), canvasH + propH + globalPropH + charPanelH + 160];
-        };
-
-        setTimeout(() => {
-          try {
-            self._timelineEditor = new TimelineEditor(self, container, widget);
-          } catch (err) {
-            console.error("[PromptRelay] timeline editor init failed:", err);
-          }
-        }, 0);
+        const windows = Array.isArray(app.extensions)
+          ? app.extensions.some((e) => e?.name === "StubeliusLTX.DirectorWindow")
+          : !!window.__stubeliusLtxDirectorWindow;
+        if (windows) self._ltxBuildClassic = buildClassic;
+        else buildClassic();
       };
 
       const onResize = nodeType.prototype.onResize;
