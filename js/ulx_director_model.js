@@ -10,6 +10,7 @@ export const MIN_LEN = 6;                      // the classic editor's shortest 
 export const REF = { off: "OFF", msr: "Licon MSR (Prefix)", ghost: "Ghost Mask (End)" };
 export const REF_SLOTS = 5;                    // @ref1..@ref5
 export const REF_VIEWS = 3;                    // pictures per reference slot
+export const VOICE_SECONDS = 5;                // the voice slot of an AVref MSR LoRA (VOICE_SECONDS in ltx_director.py)
 export const MSR_LIMIT = 5;                    // the MSR engine takes 1-5 reference pictures
 
 export function newId(tag = "") {
@@ -54,7 +55,8 @@ export function parseTimeline(text) {
       if (p[key] !== undefined) t[key] = p[key];
     }
     if (Array.isArray(p.characters)) {
-      t.characters = p.characters.map((c) => ({ images: Array.isArray(c?.images) ? c.images : [], description: c?.description || "" }));
+      t.characters = p.characters.map((c) => ({ images: Array.isArray(c?.images) ? c.images : [], description: c?.description || "",
+        ...(c?.voice?.name ? { voice: { name: c.voice.name } } : {}) }));
     }
     for (const key of ["segments", "motionSegments", "audioSegments"]) {
       if (Array.isArray(p[key])) t[key] = p[key].filter((s) => s && typeof s === "object").map((s) => ({ ...s }));
@@ -130,6 +132,7 @@ export function serializeTimeline(t, ctx = {}) {
     characters: (t.characters || []).map((c) => ({
       images: (c.images || []).map((img) => (img.b64 ? { b64: img.b64, name: img.name } : { name: img.name })),
       description: c.description || "",
+      ...(c.voice?.name ? { voice: { name: c.voice.name } } : {}),
     })),
     segments: segs.map(saved),
     motionSegments: (t.motionSegments || []).map(saved),

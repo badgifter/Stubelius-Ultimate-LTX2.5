@@ -144,6 +144,10 @@ function keyframeLane(d, view, pct) {
   const thumb = (url) => h("div.t-kf-t", url ? h("img", { src: url, draggable: false }) : null);
   const picked = d.picked();
   for (const k of keys) {
+    const span = k.s.isAnchor ? null : keySpan(d, k.s, view, pct, lane);
+    if (span) lane.appendChild(span);
+  }
+  for (const k of keys) {
     const s = k.s;
     const isSel = picked.item === s;
     const label = k.kind === "first" ? `First · ${d.fmt(k.at)}` : k.kind === "last" ? `Last · ${d.fmt(k.at + 1)}`
@@ -203,6 +207,46 @@ function keyframeLane(d, view, pct) {
 
 function segNo(d, s) {
   return M.segmentsOf(d.t).indexOf(s) + 1;
+}
+
+// A segment's picture lasts as long as its segment: a bar from the picture over the segment's prompt zone. Its far
+// edge is the cut to the next segment (the cut before it for a picture pinned to the last frame): drag it as on the
+// Prompts lane.
+function keySpan(d, s, view, pct, lane) {
+  const zones = d.zones || [];
+  const zi = zones.findIndex((z) => z.seg === s);
+  if (zi < 0) return null;
+  const list = M.segmentsOf(d.t);
+  const i = list.indexOf(s);
+  const end = !!s.isEndFrame && M.isPicture(s);
+  const pair = end ? [list[i - 1], s] : [s, list[i + 1]];
+  const len = h("em");
+  const el = h("div.t-kf-span", { class: end ? "end" : null, title: "How long this picture's segment lasts", onclick: () => d.select("seg", s.id) }, len);
+  const place = () => {
+    const zs = d.zones || [];
+    const k = zs.findIndex((z) => z.seg === s);
+    const z = zs[k];
+    if (!z) return;
+    const to = k === zs.length - 1 ? Math.max(z.to, d.lastF) : z.to;
+    el.style.left = pct(z.from);
+    el.style.width = `${Math.max(0, ((to - z.from) / view) * 100)}%`;
+    len.textContent = `${d.sec(to - z.from).toFixed(1)} s`;
+  };
+  place();
+  if (pair[0] && pair[1] && zones.some((z) => z.seg === pair[0]) && zones.some((z) => z.seg === pair[1])) {
+    const edge = h("div.t-edge", { class: end ? "l" : null, title: "Drag to change how long it lasts (moves the cut)" });
+    edge.addEventListener("click", (ev) => ev.stopPropagation());
+    edge.addEventListener("pointerdown", (e) => dragAlong(e, edge, lane, view, {
+      onMove: (f) => {
+        M.moveCut(d.t, pair[0], pair[1], f);
+        d.zones = M.deriveStrings(d.t, d.startF, d.durF).zones;
+        place();
+      },
+      onEnd: (moved) => { if (moved) { d.commit(); d.refresh(["tl", "insp", "preview"]); } },
+    }));
+    el.appendChild(edge);
+  }
+  return el;
 }
 
 // ------------------------------------------------------------------------------------------- prompts
@@ -367,6 +411,32 @@ function audioLane(d, view, pct) {
         },
       });
     });
+    if (!clip) {
+      // the edges clip the sound: the left one cuts its front (what remains stays where it played), the right one its end
+      const src = Number(s.audioDurationFrames) || Infinity;
+      const trim = (e, front) => {
+        const s0 = s.start, t0 = Number(s.trimStart) || 0, l0 = s.length;
+        dragAlong(e, e.currentTarget, lane, view, {
+          onMove: (f, dx) => {
+            const k = Math.round(dx);
+            if (front) {
+              const cut = Math.max(-Math.min(s0, t0), Math.min(l0 - M.MIN_LEN, k));
+              Object.assign(s, { start: s0 + cut, trimStart: t0 + cut, length: l0 - cut });
+            } else {
+              s.length = Math.max(M.MIN_LEN, Math.min(src - t0, l0 + k));
+            }
+            blk.style.left = pct(s.start);
+            blk.style.width = `calc(${Math.max(1, (s.length / view) * 100)}% - 2px)`;
+          },
+          onEnd: (moved) => { if (moved) { d.commit(); d.refresh(["tl", "insp"]); } },
+        });
+      };
+      const left = h("div.t-trim.l", { title: "Drag to clip the start of the sound" });
+      const right = h("div.t-trim", { title: "Drag to clip the end of the sound" });
+      left.addEventListener("pointerdown", (e) => trim(e, true));
+      right.addEventListener("pointerdown", (e) => trim(e, false));
+      blk.append(left, right);
+    }
     lane.appendChild(blk);
   }
   if (override) lane.appendChild(h("div.t-hint.top", "The motion clips' own sound is used (Motion inspector)"));
@@ -526,6 +596,17 @@ const CSS = `
 .slx-d .t-kf-slot{position:absolute;top:0;width:96px;height:56px;border-radius:11px;border:1.5px dashed var(--stroke2);background:var(--well);
   color:var(--text3);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;font-weight:500;z-index:2}
 .slx-d .t-kf-slot.end{transform:translateX(-100%)}
+.slx-d .t-kf-span{position:absolute;top:16px;height:24px;border-radius:8px;z-index:1;cursor:pointer;
+  background:linear-gradient(90deg,rgba(var(--k),.22),rgba(var(--k),.08));border:1px solid rgba(var(--k),.4)}
+.slx-d .t-kf-span em{position:absolute;right:12px;top:50%;transform:translateY(-50%);font-style:normal;font-size:11px;color:var(--text2);
+  font-family:var(--fh);font-weight:600;white-space:nowrap;pointer-events:none}
+.slx-d .t-kf-span.end em{right:auto;left:12px}
+.slx-d .t-kf-span .t-edge{right:-5px}
+.slx-d .t-kf-span .t-edge.l{left:-5px;right:auto}
+.slx-d .t-kf-span .t-edge:hover{background:rgba(var(--k),.6)}
+.slx-d .t-trim{position:absolute;top:0;bottom:0;right:0;width:9px;cursor:ew-resize;z-index:2;touch-action:none;border-radius:0 11px 11px 0}
+.slx-d .t-trim.l{left:0;right:auto;border-radius:11px 0 0 11px}
+.slx-d .t-trim:hover{background:rgba(var(--snd),.55)}
 .slx-d .t-kf-slot:hover,.slx-d .t-kf-slot.over{border-color:rgba(var(--k),.8);color:var(--text)}
 /* blocks */
 .slx-d .t-shots,.slx-d .t-snd{top:8px;bottom:8px}

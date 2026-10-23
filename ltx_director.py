@@ -1683,12 +1683,13 @@ class LTXDirector(io.ComfyNode):
             _slots = [s for s in _referenced_slots if s < len(char_slot_images) and char_slot_images[s]]
             if not _slots:
                 _slots = range(len(char_slot_images))
-            # A character's voice goes to the MSR slot of its first image.
-            _selected, _voice_names = [], []
+            # A character's voice goes to the MSR slot of its first image. Voiced characters' first images lead:
+            # Licon's AVref takes voices on slots 1-3 only, and a slot can hold up to three pictures.
+            _voiced = [s for s in _slots if char_voices[s] and char_slot_images[s]]
+            _voice_names = [(k + 1, char_voices[s]) for k, s in enumerate(_voiced)]
+            _selected = [char_slot_images[s][0] for s in _voiced]
             for _slot in _slots:
-                if char_voices[_slot] and char_slot_images[_slot]:
-                    _voice_names.append((len(_selected) + 1, char_voices[_slot]))
-                _selected.extend(char_slot_images[_slot])
+                _selected.extend(char_slot_images[_slot][1:] if _slot in _voiced else char_slot_images[_slot])
             log.info("[LTXDirector] MSR slideshow subjects: referenced slots=%s, images=%d", _referenced_slots, len(_selected))
 
             identity_images = [

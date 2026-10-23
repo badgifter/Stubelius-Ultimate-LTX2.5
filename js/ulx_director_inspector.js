@@ -5,9 +5,9 @@
 // makes again. Under it the global prompt and what the sound and the motion are, and the seeds of the last render:
 // point at one to see it, click to pick the winner; New seed and Hunt render again.
 import { h, icon, clear, seg, button, iconButton, label, menu, slider, toggle, toast, goToStep } from "./ulx_ui.js";
-import { pickFile, pickFiles, blockPicture, drawPeaks, dropTarget, dropTargetMany, isImageFile, uploadMedia } from "./ulx_media.js";
+import { pickFile, pickFiles, blockPicture, drawPeaks, dropTarget, dropTargetMany, isImageFile, isAudioFile, inputUrl, uploadMedia } from "./ulx_media.js";
 import * as M from "./ulx_director_model.js";
-import { addRefPictures, describeRef, refPictureUrl } from "./ulx_director_cast.js";
+import { addRefPictures, describeRef, refPictureUrl, setRefVoice } from "./ulx_director_cast.js";
 
 let styled = false;
 function injectStyles() {
@@ -347,7 +347,7 @@ function refInspector(d, box, i) {
   const msr = d.refMode === M.REF.msr;
   const n = (c.images || []).length;
   box.appendChild(head(`@${i + 1}`, `Reference ${i + 1} · @ref${i + 1}`,
-    `${n} picture${n === 1 ? "" : "s"} · ${d.refsOn ? (msr ? "Licon MSR" : "Ghost Mask") : "references are off"}`));
+    `${n} picture${n === 1 ? "" : "s"}${c.voice ? " and a voice" : ""} · ${d.refsOn ? (msr ? "Licon MSR" : "Ghost Mask") : "references are off"}`));
   if (!d.refsOn) {
     box.appendChild(h("div.i-note", icon("info", 14), "References are off: pick Licon MSR (or Ghost Mask) at the top to use them"));
   }
@@ -367,6 +367,25 @@ function refInspector(d, box, i) {
   }
   sec.appendChild(grid);
   box.appendChild(sec);
+
+  // its voice (Licon MSR with an AVref LoRA): how it sounds when a prompt gives it a line; the clip isn't played
+  const vsec = h("div.i-sec", h("div.i-sech", label("Voice"),
+    h("span.slx-muted", msr ? `its first ${M.VOICE_SECONDS} s set how it sounds` : "used with Licon MSR")));
+  const pickVoice = async () => { const f = await pickFile("audio/*"); if (f) setRefVoice(d, i, f); };
+  let vcard;
+  if (c.voice) {
+    vcard = h("div.i-media.i-voice", h("div.i-mtxt", h("b", fileBase(c.voice.name)),
+      h("audio", { controls: true, preload: "metadata", src: inputUrl(c.voice.name) })),
+    button("Replace", "upload", "small", pickVoice),
+    iconButton("trash", "Remove the voice", () => { delete c.voice; d.touch(["insp", "tl", "cast"]); }));
+  } else {
+    vcard = h("button.i-voice-add", { type: "button", title: "A clip of this character speaking: only the voice is used", onclick: pickVoice },
+      icon("mic", 18), "Add a voice clip");
+  }
+  dropTarget(vcard, (file) => isAudioFile(file) && setRefVoice(d, i, file));
+  vsec.appendChild(vcard);
+  if (msr) vsec.appendChild(h("div.i-note.dim", icon("info", 14), "Give it a line in quotes in a prompt: it's spoken in this voice. Needs an AVref MSR LoRA (Licon MSR V2)."));
+  box.appendChild(vsec);
 
   // its label: short in MSR (the pictures carry the look), a description otherwise
   const lsec = h("div.i-sec", h("div.i-sech", label("Label"), h("span.slx-muted", msr ? "3-5 words; the pictures carry the look" : "who or what it is")));
@@ -597,8 +616,13 @@ const CSS = `
   justify-content:center;gap:6px;font-size:12px}
 .slx-d .i-view.add:hover,.slx-d .i-view.add.over{color:var(--text);border-color:rgba(var(--cut),.7)}
 .slx-d .i-view-del{position:absolute;right:6px;top:6px;width:22px;height:22px;border-radius:50%;border:0;background:rgba(0,0,0,.65);color:#fff;
-  display:none;place-items:center;padding:0}
-.slx-d .i-view:hover .i-view-del{display:grid}
+  display:grid;place-items:center;padding:0;cursor:pointer}
+.slx-d .i-view-del:hover{background:rgba(var(--bad),.9)}
+.slx-d .i-voice .i-mtxt{flex:1;gap:6px}
+.slx-d .i-voice audio{width:100%;height:32px}
+.slx-d .i-voice-add{display:flex;align-items:center;justify-content:center;gap:8px;height:52px;border-radius:14px;border:1px dashed var(--stroke2);
+  background:var(--glass);color:var(--text3);font-size:12px;cursor:pointer}
+.slx-d .i-voice-add:hover,.slx-d .i-voice-add.over,.slx-d .i-voice.over{color:var(--text);border-color:rgba(var(--snd),.7)}
 .slx-d .i-label{font-size:13.5px}
 .slx-d .i-note{display:flex;align-items:flex-start;gap:7px;font-size:12px;color:rgb(var(--cut));line-height:1.4}
 .slx-d .i-note.dim{color:var(--text2)}
